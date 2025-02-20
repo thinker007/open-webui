@@ -199,6 +199,6 @@ def get_web_loader(
         verify_ssl=verify_ssl,
         requests_per_second=requests_per_second,
         continue_on_failure=True,
-        session = session
+        session = session,
         trust_env=trust_env,
     )
