@@ -7,7 +7,7 @@ from typing import Any, AsyncIterator, Dict, Iterator, List, Sequence, Union
 
 
 #使用python curl_cffi
-import requests
+import  requests
 from curl_adapter import CurlCffiAdapter
 
 from langchain_community.document_loaders import (
