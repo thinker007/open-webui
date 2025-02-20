@@ -3,6 +3,10 @@ import urllib.parse
 import validators
 from typing import Union, Sequence, Iterator
 
+#使用python curl_cffi
+import requests
+from curl_adapter import CurlCffiAdapter
+
 from langchain_community.document_loaders import (
     WebBaseLoader,
 )
@@ -99,10 +103,13 @@ def get_web_loader(
 ):
     # Check if the URLs are valid
     safe_urls = safe_validate_urls([urls] if isinstance(urls, str) else urls)
-
+    session = requests.Session()
+    session.mount("http://", CurlCffiAdapter(impersonate_browser_type="chrome"))
+    session.mount("https://", CurlCffiAdapter(impersonate_browser_type="chrome"))
     return SafeWebBaseLoader(
         safe_urls,
         verify_ssl=verify_ssl,
         requests_per_second=requests_per_second,
         continue_on_failure=True,
+        session = session
     )
