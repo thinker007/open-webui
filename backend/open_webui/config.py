@@ -1978,6 +1978,12 @@ FIRECRAWL_API_BASE_URL = PersistentConfig(
     os.environ.get("FIRECRAWL_API_BASE_URL", "https://api.firecrawl.dev"),
 )
 
+CURL_IMPERSONATE_SERVER_BASE_URL = PersistentConfig(
+    "CURL_IMPERSONATE_SERVER_BASE_URL",
+    "curl_impersonate_server.api_url",
+    os.environ.get("CURL_IMPERSONATE_SERVER_BASE_URL", "https://bba5fcsqp561u8p04cfd.containers.yandexcloud.net"),
+)
+
 ####################################
 # Images
 ####################################

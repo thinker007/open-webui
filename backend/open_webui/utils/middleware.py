@@ -288,8 +288,10 @@ async def chat_web_search_handler(
             },
             user,
         )
-
-        response = res["choices"][0]["message"]["content"]
+        try:
+            response = res["choices"][0]["message"]["content"]
+        except:
+            log.info(f"res:{res}")
 
         try:
             bracket_start = response.find("{")

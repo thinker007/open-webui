@@ -35,9 +35,13 @@ services:
       - ollama
     ports:
       - ${OPEN_WEBUI_PORT-42000}:8080
+    env_file:
+      - .env
     environment:
       - 'OLLAMA_BASE_URL=http://ollama:11434'
       - 'WEBUI_SECRET_KEY='
+      - 'GLOBAL_LOG_LEVEL=DEBUG'
+      - 'RAG_WEB_SEARCH_TRUST_ENV=True'
     extra_hosts:
       - host.docker.internal:host-gateway
     restart: unless-stopped

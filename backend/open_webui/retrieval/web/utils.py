@@ -17,8 +17,9 @@ from typing import (
     Union,
     Literal,
 )
-import aiohttp
-import certifi
+import httpx
+from httpx_curl_cffi import AsyncCurlTransport, CurlOpt
+
 import validators
 from typing import Any, AsyncIterator, Dict, Iterator, List, Sequence, Union
 
@@ -36,6 +37,7 @@ from open_webui.config import (
     RAG_WEB_LOADER_ENGINE,
     FIRECRAWL_API_BASE_URL,
     FIRECRAWL_API_KEY,
+    CURL_IMPERSONATE_SERVER_BASE_URL,
 )
 from open_webui.env import SRC_LOG_LEVELS
 
@@ -396,11 +398,10 @@ class SafePlaywrightURLLoader(PlaywrightURLLoader):
         self._sync_wait_for_rate_limit()
         return True
 
-
-class SafeWebBaseLoader(WebBaseLoader):
+class CurlImpersonateServerLoader(WebBaseLoader):
     """WebBaseLoader with enhanced error handling for URLs."""
 
-    def __init__(self, trust_env: bool = False, *args, **kwargs):
+    def __init__(self, verify_ssl: bool = True,base_url: str = "",trust_env: bool = False, *args, **kwargs):
         """Initialize SafeWebBaseLoader
         Args:
             trust_env (bool, optional): set to True if using proxy to make web requests, for example
@@ -408,27 +409,139 @@ class SafeWebBaseLoader(WebBaseLoader):
         """
         super().__init__(*args, **kwargs)
         self.trust_env = trust_env
+        self.verify_ssl = verify_ssl
+        self.base_url = base_url
 
     async def _fetch(
         self, url: str, retries: int = 3, cooldown: int = 2, backoff: float = 1.5
     ) -> str:
-        async with aiohttp.ClientSession(trust_env=self.trust_env) as session:
+        if self.base_url:
+            url = f"{self.base_url}/{url}"
+        async with httpx.AsyncClient(trust_env=self.trust_env,verify=self.verify_ssl) as client:
             for i in range(retries):
                 try:
                     kwargs: Dict = dict(
                         headers=self.session.headers,
                         cookies=self.session.cookies.get_dict(),
                     )
-                    if not self.session.verify:
-                        kwargs["ssl"] = False
-                    kwargs["ssl"] = False #禁用 ssl
-                    async with session.get(
-                        "http://192.168.48.252/" + url, **(self.requests_kwargs | kwargs)
-                    ) as response:
-                        if self.raise_for_status:
-                            response.raise_for_status()
-                        return await response.text()
-                except aiohttp.ClientConnectionError as e:
+                    #if not self.session.verify:
+                    #    kwargs["verify"] = False
+                    #kwargs["ssl"] = False #禁用 ssl
+                    
+                    log.debug(f'url:{url}\n\nkwargs:{kwargs}')
+                    
+                    response = await client.get(url, **kwargs)
+                    if self.raise_for_status:
+                        response.raise_for_status()
+                    return  response.text
+                except httpx.ConnectError as e:
+                    if i == retries - 1:
+                        raise
+                    else:
+                        log.warning(
+                            f"Error fetching {url} with attempt "
+                            f"{i + 1}/{retries}: {e}. Retrying..."
+                        )
+                        await asyncio.sleep(cooldown * backoff**i)
+        raise ValueError("retry count exceeded")
+
+    def _unpack_fetch_results(
+        self, results: Any, urls: List[str], parser: Union[str, None] = None
+    ) -> List[Any]:
+        """Unpack fetch results into BeautifulSoup objects."""
+        from bs4 import BeautifulSoup
+
+        final_results = []
+        for i, result in enumerate(results):
+            url = urls[i]
+            if parser is None:
+                if url.endswith(".xml"):
+                    parser = "xml"
+                else:
+                    parser = self.default_parser
+                self._check_parser(parser)
+            final_results.append(BeautifulSoup(result, parser, **self.bs_kwargs))
+        return final_results
+
+    async def ascrape_all(
+        self, urls: List[str], parser: Union[str, None] = None
+    ) -> List[Any]:
+        """Async fetch all urls, then return soups for all results."""
+        results = await self.fetch_all(urls)
+        return self._unpack_fetch_results(results, urls, parser=parser)
+
+    def lazy_load(self) -> Iterator[Document]:
+        """Lazy load text from the url(s) in web_path with error handling."""
+        for path in self.web_paths:
+            try:
+                soup = self._scrape(path, bs_kwargs=self.bs_kwargs)
+                text = soup.get_text(**self.bs_get_text_kwargs)
+
+                # Build metadata
+                metadata = extract_metadata(soup, path)
+
+                yield Document(page_content=text, metadata=metadata)
+            except Exception as e:
+                # Log the error and continue with the next URL
+                log.exception(e, "Error loading %s", path)
+
+    async def alazy_load(self) -> AsyncIterator[Document]:
+        """Async lazy load text from the url(s) in web_path."""
+        results = await self.ascrape_all(self.web_paths)
+        for path, soup in zip(self.web_paths, results):
+            text = soup.get_text(**self.bs_get_text_kwargs)
+            metadata = {"source": path}
+            if title := soup.find("title"):
+                metadata["title"] = title.get_text()
+            if description := soup.find("meta", attrs={"name": "description"}):
+                metadata["description"] = description.get(
+                    "content", "No description found."
+                )
+            if html := soup.find("html"):
+                metadata["language"] = html.get("lang", "No language found.")
+            yield Document(page_content=text, metadata=metadata)
+
+    async def aload(self) -> list[Document]:
+        """Load data into Document objects."""
+        return [document async for document in self.alazy_load()]
+
+class SafeWebBaseLoader(WebBaseLoader):
+    """WebBaseLoader with enhanced error handling for URLs."""
+
+    def __init__(self, verify_ssl: bool = True,trust_env: bool = False, *args, **kwargs):
+        """Initialize SafeWebBaseLoader
+        Args:
+            trust_env (bool, optional): set to True if using proxy to make web requests, for example
+                using http(s)_proxy environment variables. Defaults to False.
+        """
+        super().__init__(*args, **kwargs)
+        self.trust_env = trust_env
+        self.verify_ssl = verify_ssl
+
+    async def _fetch(
+        self, url: str, retries: int = 3, cooldown: int = 2, backoff: float = 1.5
+    ) -> str:
+        async with httpx.AsyncClient(
+            trust_env=self.trust_env,
+            verify=self.verify_ssl,
+            transport=AsyncCurlTransport(
+            impersonate="chrome",
+            default_headers=True,
+            # required for parallel requests, see curl_cffi issues below
+            curl_options={CurlOpt.FRESH_CONNECT: True})
+        ) as client:
+            for i in range(retries):
+                try:
+                    kwargs: Dict = dict(
+                        headers=self.session.headers,
+                        cookies=self.session.cookies.get_dict(),
+                    )   
+                    log.debug(f'url:{url}\n\nkwargs:{kwargs}')
+                    response = await client.get(url, **kwargs)
+                    if self.raise_for_status:
+                        response.raise_for_status()
+                    return  response.text
+                except httpx.ConnectError as e:
                     if i == retries - 1:
                         raise
                     else:
@@ -504,6 +617,7 @@ RAG_WEB_LOADER_ENGINES = defaultdict(lambda: SafeWebBaseLoader)
 RAG_WEB_LOADER_ENGINES["playwright"] = SafePlaywrightURLLoader
 RAG_WEB_LOADER_ENGINES["safe_web"] = SafeWebBaseLoader
 RAG_WEB_LOADER_ENGINES["firecrawl"] = SafeFireCrawlLoader
+RAG_WEB_LOADER_ENGINES["curl_impersonate_server"] = CurlImpersonateServerLoader
 
 
 def get_web_loader(
@@ -528,7 +642,10 @@ def get_web_loader(
     if RAG_WEB_LOADER_ENGINE.value == "firecrawl":
         web_loader_args["api_key"] = FIRECRAWL_API_KEY.value
         web_loader_args["api_url"] = FIRECRAWL_API_BASE_URL.value
-
+        
+    if RAG_WEB_LOADER_ENGINE.value == "curl_impersonate_server":
+        web_loader_args["base_url"] = CURL_IMPERSONATE_SERVER_BASE_URL.value
+    
     # Create the appropriate WebLoader based on the configuration
     WebLoaderClass = RAG_WEB_LOADER_ENGINES[RAG_WEB_LOADER_ENGINE.value]
     web_loader = WebLoaderClass(**web_loader_args)
