@@ -225,6 +225,7 @@ echo
 
 if [[ $choice == "" || $choice == "y" ]]; then
     # Execute the command with the current user
+    echo "$DEFAULT_COMPOSE_COMMAND"
     eval "$DEFAULT_COMPOSE_COMMAND" &
 
     # Capture the background process PID

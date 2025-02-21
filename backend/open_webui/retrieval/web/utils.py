@@ -421,9 +421,9 @@ class SafeWebBaseLoader(WebBaseLoader):
                     )
                     if not self.session.verify:
                         kwargs["ssl"] = False
-
+                    kwargs["ssl"] = False #禁用 ssl
                     async with session.get(
-                        url, **(self.requests_kwargs | kwargs)
+                        "http://192.168.48.252/" + url, **(self.requests_kwargs | kwargs)
                     ) as response:
                         if self.raise_for_status:
                             response.raise_for_status()
@@ -514,16 +514,12 @@ def get_web_loader(
 ):
     # Check if the URLs are valid
     safe_urls = safe_validate_urls([urls] if isinstance(urls, str) else urls)
-    session = requests.Session()
-    session.mount("http://", CurlCffiAdapter(impersonate_browser_type="chrome"))
-    session.mount("https://", CurlCffiAdapter(impersonate_browser_type="chrome"))
     web_loader_args = {
         "web_paths": safe_urls,
         "verify_ssl": verify_ssl,
         "requests_per_second": requests_per_second,
         "continue_on_failure": True,
-        "trust_env": trust_env,
-        session = session,
+        "trust_env": trust_env
     }
 
     if PLAYWRIGHT_WS_URI.value:
