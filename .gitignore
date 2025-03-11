@@ -311,3 +311,5 @@ cypress/screenshots
 # docker compose env
 
 .docker-compose.*
+docker-compose.*.yaml
+docker-compose.yaml
