@@ -19,12 +19,21 @@ from typing import (
 )
 import httpx
 from httpx_curl_cffi import AsyncCurlTransport, CurlOpt
+from crawl4ai import AsyncWebCrawler
+from crawl4ai.async_configs import CrawlerRunConfig
+from crawl4ai.markdown_generation_strategy import DefaultMarkdownGenerator
+from crawl4ai.content_filter_strategy import PruningContentFilter
+
+from readability.readability import Document as ReadabilityDocument
+
+from html_sanitizer import Sanitizer
+
 
 import validators
 from typing import Any, AsyncIterator, Dict, Iterator, List, Sequence, Union
 
-#使用python curl_cffi
-import  requests
+# 使用python curl_cffi
+import requests
 from curl_adapter import CurlCffiAdapter
 from langchain_community.document_loaders import PlaywrightURLLoader, WebBaseLoader
 from langchain_community.document_loaders.firecrawl import FireCrawlLoader
@@ -53,7 +62,8 @@ def validate_url(url: Union[str, Sequence[str]]):
             # Local web fetch is disabled, filter out any URLs that resolve to private IP addresses
             parsed_url = urllib.parse.urlparse(url)
             # Get IPv4 and IPv6 addresses
-            ipv4_addresses, ipv6_addresses = resolve_hostname(parsed_url.hostname)
+            ipv4_addresses, ipv6_addresses = resolve_hostname(
+                parsed_url.hostname)
             # Check if any of the resolved addresses are private
             # This is technically still vulnerable to DNS rebinding attacks, as we don't control WebBaseLoader
             for ip in ipv4_addresses:
@@ -85,8 +95,10 @@ def resolve_hostname(hostname):
     addr_info = socket.getaddrinfo(hostname, None)
 
     # Extract IP addresses from address information
-    ipv4_addresses = [info[4][0] for info in addr_info if info[0] == socket.AF_INET]
-    ipv6_addresses = [info[4][0] for info in addr_info if info[0] == socket.AF_INET6]
+    ipv4_addresses = [info[4][0]
+                      for info in addr_info if info[0] == socket.AF_INET]
+    ipv6_addresses = [info[4][0]
+                      for info in addr_info if info[0] == socket.AF_INET6]
 
     return ipv4_addresses, ipv6_addresses
 
@@ -96,7 +108,8 @@ def extract_metadata(soup, url):
     if title := soup.find("title"):
         metadata["title"] = title.get_text()
     if description := soup.find("meta", attrs={"name": "description"}):
-        metadata["description"] = description.get("content", "No description found.")
+        metadata["description"] = description.get(
+            "content", "No description found.")
     if html := soup.find("html"):
         metadata["language"] = html.get("lang", "No language found.")
     return metadata
@@ -159,7 +172,8 @@ class SafeFireCrawlLoader(BaseLoader):
         proxy_server = proxy.get("server") if proxy else None
         if trust_env and not proxy_server:
             env_proxies = urllib.request.getproxies()
-            env_proxy_server = env_proxies.get("https") or env_proxies.get("http")
+            env_proxy_server = env_proxies.get(
+                "https") or env_proxies.get("http")
             if env_proxy_server:
                 if proxy:
                     proxy["server"] = env_proxy_server
@@ -282,7 +296,8 @@ class SafePlaywrightURLLoader(PlaywrightURLLoader):
         proxy_server = proxy.get("server") if proxy else None
         if trust_env and not proxy_server:
             env_proxies = urllib.request.getproxies()
-            env_proxy_server = env_proxies.get("https") or env_proxies.get("http")
+            env_proxy_server = env_proxies.get(
+                "https") or env_proxies.get("http")
             if env_proxy_server:
                 if proxy:
                     proxy["server"] = env_proxy_server
@@ -312,7 +327,8 @@ class SafePlaywrightURLLoader(PlaywrightURLLoader):
             if self.playwright_ws_url:
                 browser = p.chromium.connect(self.playwright_ws_url)
             else:
-                browser = p.chromium.launch(headless=self.headless, proxy=self.proxy)
+                browser = p.chromium.launch(
+                    headless=self.headless, proxy=self.proxy)
 
             for url in self.urls:
                 try:
@@ -320,7 +336,8 @@ class SafePlaywrightURLLoader(PlaywrightURLLoader):
                     page = browser.new_page()
                     response = page.goto(url)
                     if response is None:
-                        raise ValueError(f"page.goto() returned None for url {url}")
+                        raise ValueError(
+                            f"page.goto() returned None for url {url}")
 
                     text = self.evaluator.evaluate(page, browser, response)
                     metadata = {"source": url}
@@ -351,7 +368,8 @@ class SafePlaywrightURLLoader(PlaywrightURLLoader):
                     page = await browser.new_page()
                     response = await page.goto(url)
                     if response is None:
-                        raise ValueError(f"page.goto() returned None for url {url}")
+                        raise ValueError(
+                            f"page.goto() returned None for url {url}")
 
                     text = await self.evaluator.evaluate_async(page, browser, response)
                     metadata = {"source": url}
@@ -398,11 +416,12 @@ class SafePlaywrightURLLoader(PlaywrightURLLoader):
         self._sync_wait_for_rate_limit()
         return True
 
+
 class CurlImpersonateServerLoader(WebBaseLoader):
     """WebBaseLoader with enhanced error handling for URLs."""
 
-    def __init__(self, verify_ssl: bool = True,base_url: str = "",trust_env: bool = False, *args, **kwargs):
-        """Initialize SafeWebBaseLoader
+    def __init__(self, verify_ssl: bool = True, base_url: str = "", trust_env: bool = False, *args, **kwargs):
+        """Initialize CurlImpersonateServerLoader
         Args:
             trust_env (bool, optional): set to True if using proxy to make web requests, for example
                 using http(s)_proxy environment variables. Defaults to False.
@@ -417,23 +436,23 @@ class CurlImpersonateServerLoader(WebBaseLoader):
     ) -> str:
         if self.base_url:
             url = f"{self.base_url}/{url}"
-        async with httpx.AsyncClient(trust_env=self.trust_env,verify=self.verify_ssl) as client:
+        async with httpx.AsyncClient(trust_env=self.trust_env, verify=self.verify_ssl) as client:
             for i in range(retries):
                 try:
                     kwargs: Dict = dict(
                         headers=self.session.headers,
                         cookies=self.session.cookies.get_dict(),
                     )
-                    #if not self.session.verify:
+                    # if not self.session.verify:
                     #    kwargs["verify"] = False
-                    #kwargs["ssl"] = False #禁用 ssl
-                    
+                    # kwargs["ssl"] = False #禁用 ssl
+
                     log.debug(f'url:{url}\n\nkwargs:{kwargs}')
-                    
+
                     response = await client.get(url, **kwargs)
                     if self.raise_for_status:
                         response.raise_for_status()
-                    return  response.text
+                    return response.text
                 except httpx.ConnectError as e:
                     if i == retries - 1:
                         raise
@@ -460,7 +479,8 @@ class CurlImpersonateServerLoader(WebBaseLoader):
                 else:
                     parser = self.default_parser
                 self._check_parser(parser)
-            final_results.append(BeautifulSoup(result, parser, **self.bs_kwargs))
+            final_results.append(BeautifulSoup(
+                result, parser, **self.bs_kwargs))
         return final_results
 
     async def ascrape_all(
@@ -505,10 +525,11 @@ class CurlImpersonateServerLoader(WebBaseLoader):
         """Load data into Document objects."""
         return [document async for document in self.alazy_load()]
 
+
 class SafeWebBaseLoader(WebBaseLoader):
     """WebBaseLoader with enhanced error handling for URLs."""
 
-    def __init__(self, verify_ssl: bool = True,trust_env: bool = False, *args, **kwargs):
+    def __init__(self, verify_ssl: bool = True, trust_env: bool = False, *args, **kwargs):
         """Initialize SafeWebBaseLoader
         Args:
             trust_env (bool, optional): set to True if using proxy to make web requests, for example
@@ -525,22 +546,22 @@ class SafeWebBaseLoader(WebBaseLoader):
             trust_env=self.trust_env,
             verify=self.verify_ssl,
             transport=AsyncCurlTransport(
-            impersonate="chrome",
-            default_headers=True,
-            # required for parallel requests, see curl_cffi issues below
-            curl_options={CurlOpt.FRESH_CONNECT: True})
+                impersonate="chrome",
+                default_headers=True,
+                # required for parallel requests, see curl_cffi issues below
+                curl_options={CurlOpt.FRESH_CONNECT: True})
         ) as client:
             for i in range(retries):
                 try:
                     kwargs: Dict = dict(
                         headers=self.session.headers,
                         cookies=self.session.cookies.get_dict(),
-                    )   
+                    )
                     log.debug(f'url:{url}\n\nkwargs:{kwargs}')
                     response = await client.get(url, **kwargs)
                     if self.raise_for_status:
                         response.raise_for_status()
-                    return  response.text
+                    return response.content
                 except httpx.ConnectError as e:
                     if i == retries - 1:
                         raise
@@ -567,7 +588,8 @@ class SafeWebBaseLoader(WebBaseLoader):
                 else:
                     parser = self.default_parser
                 self._check_parser(parser)
-            final_results.append(BeautifulSoup(result, parser, **self.bs_kwargs))
+            final_results.append(BeautifulSoup(
+                result, parser, **self.bs_kwargs))
         return final_results
 
     async def ascrape_all(
@@ -596,7 +618,43 @@ class SafeWebBaseLoader(WebBaseLoader):
         """Async lazy load text from the url(s) in web_path."""
         results = await self.ascrape_all(self.web_paths)
         for path, soup in zip(self.web_paths, results):
-            text = soup.get_text(**self.bs_get_text_kwargs)
+            # text = soup.get_text(**self.bs_get_text_kwargs)
+            # 去除 li 下面的 a 标签，一般是推荐内容
+            # 重命名Document为 ReadabilityDocument 避免重复
+            for tag in soup.select('footer,nav,header,script,style'):
+                tag.decompose()
+            raw_html = str(soup)
+            sanitizer = Sanitizer()
+            raw_html = sanitizer.sanitize(raw_html)
+            doc = ReadabilityDocument(raw_html)
+            if len(doc.summary())/len(raw_html) >= 0.5:  # 先用 readability 提取网页的主要内容，然后再转换为 markdown
+                raw_html = doc.summary()
+            
+                
+                # 使用 crawl4ai 对 soup 对象进行处理，先清理无用标签，然后变为 markdown 格式
+                
+                
+                # Use the "raw:" prefix to indicate raw HTML content
+            crawler = AsyncWebCrawler()
+            md_generator = DefaultMarkdownGenerator(
+                options={
+                    "ignore_links": True,
+                    "escape_html": False
+                },
+                content_filter=PruningContentFilter(threshold=0.5)
+            )
+            raw_config = CrawlerRunConfig(bypass_cache=False,
+                                          word_count_threshold=10,
+                                          # excluded_tags=["nav", "footer", "header"],
+                                          # exclude_external_links=True,
+                                          markdown_generator=md_generator
+                                          )
+            result = await crawler.arun(url=f"raw:{raw_html}", config=raw_config)
+            if result.markdown_v2.fit_markdown:
+                text = result.markdown_v2.fit_markdown
+            else:
+                text = result.markdown_v2.raw_markdown
+
             metadata = {"source": path}
             if title := soup.find("title"):
                 metadata["title"] = title.get_text()
@@ -606,6 +664,7 @@ class SafeWebBaseLoader(WebBaseLoader):
                 )
             if html := soup.find("html"):
                 metadata["language"] = html.get("lang", "No language found.")
+            log.debug(f'WebBaseLoader alazy_load: {text}  {metadata}')
             yield Document(page_content=text, metadata=metadata)
 
     async def aload(self) -> list[Document]:
@@ -642,10 +701,10 @@ def get_web_loader(
     if RAG_WEB_LOADER_ENGINE.value == "firecrawl":
         web_loader_args["api_key"] = FIRECRAWL_API_KEY.value
         web_loader_args["api_url"] = FIRECRAWL_API_BASE_URL.value
-        
+
     if RAG_WEB_LOADER_ENGINE.value == "curl_impersonate_server":
         web_loader_args["base_url"] = CURL_IMPERSONATE_SERVER_BASE_URL.value
-    
+
     # Create the appropriate WebLoader based on the configuration
     WebLoaderClass = RAG_WEB_LOADER_ENGINES[RAG_WEB_LOADER_ENGINE.value]
     web_loader = WebLoaderClass(**web_loader_args)

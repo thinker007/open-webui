@@ -309,3 +309,5 @@ cypress/screenshots
 .vscode/settings.json
 
 # docker compose env
+
+.docker-compose.*

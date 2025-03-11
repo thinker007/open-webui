@@ -40,10 +40,10 @@ def search_searxng(
     """
 
     # Default values for optional parameters are provided as empty strings or None when not specified.
-    language = kwargs.get("language", "auto")
+    language = kwargs.get("language", "zh")
     safesearch = kwargs.get("safesearch", "0")
     time_range = kwargs.get("time_range", "")
-    categories = "".join(kwargs.get("categories", ["general","news"]))
+    categories = "".join(kwargs.get("categories", ["general", "news"]))
 
     params = {
         "q": query,
@@ -55,6 +55,7 @@ def search_searxng(
         "categories": categories,
         "theme": "simple",
         "image_proxy": 0,
+        "engines":"bing,google,duckduckgo,duckduckgo news"
     }
 
     # Legacy query format
@@ -80,7 +81,8 @@ def search_searxng(
 
     json_response = response.json()
     results = json_response.get("results", [])
-    sorted_results = sorted(results, key=lambda x: x.get("score", 0), reverse=True)
+    sorted_results = sorted(
+        results, key=lambda x: x.get("score", 0), reverse=True)
     if filter_list:
         sorted_results = get_filtered_results(sorted_results, filter_list)
     return [
