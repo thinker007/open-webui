@@ -43,9 +43,9 @@ from open_webui.retrieval.loaders.tavily import TavilyLoader
 from open_webui.constants import ERROR_MESSAGES
 from open_webui.config import (
     ENABLE_RAG_LOCAL_WEB_FETCH,
-    PLAYWRIGHT_WS_URI,
+    PLAYWRIGHT_WS_URL,
     PLAYWRIGHT_TIMEOUT,
-    RAG_WEB_LOADER_ENGINE,
+    WEB_LOADER_ENGINE,
     FIRECRAWL_API_BASE_URL,
     FIRECRAWL_API_KEY,
     CURL_IMPERSONATE_SERVER_BASE_URL,
@@ -820,30 +820,39 @@ def get_web_loader(
         "trust_env": trust_env
     }
 
-    if RAG_WEB_LOADER_ENGINE.value == "playwright":
+    if WEB_LOADER_ENGINE.value == "" or WEB_LOADER_ENGINE.value == "safe_web":
+        WebLoaderClass = SafeWebBaseLoader
+    if WEB_LOADER_ENGINE.value == "playwright":
+        WebLoaderClass = SafePlaywrightURLLoader
         web_loader_args["playwright_timeout"] = PLAYWRIGHT_TIMEOUT.value * 1000
-        if PLAYWRIGHT_WS_URI.value:
-            web_loader_args["playwright_ws_url"] = PLAYWRIGHT_WS_URI.value
+        if PLAYWRIGHT_WS_URL.value:
+            web_loader_args["playwright_ws_url"] = PLAYWRIGHT_WS_URL.value
 
-    if RAG_WEB_LOADER_ENGINE.value == "firecrawl":
+    if WEB_LOADER_ENGINE.value == "firecrawl":
+        WebLoaderClass = SafeFireCrawlLoader
         web_loader_args["api_key"] = FIRECRAWL_API_KEY.value
         web_loader_args["api_url"] = FIRECRAWL_API_BASE_URL.value
 
     if RAG_WEB_LOADER_ENGINE.value == "curl_impersonate_server":
         web_loader_args["base_url"] = CURL_IMPERSONATE_SERVER_BASE_URL.value
 
-    if RAG_WEB_LOADER_ENGINE.value == "tavily":
+    if WEB_LOADER_ENGINE.value == "tavily":
+        WebLoaderClass = SafeTavilyLoader
         web_loader_args["api_key"] = TAVILY_API_KEY.value
         web_loader_args["extract_depth"] = TAVILY_EXTRACT_DEPTH.value
 
-    # Create the appropriate WebLoader based on the configuration
-    WebLoaderClass = RAG_WEB_LOADER_ENGINES[RAG_WEB_LOADER_ENGINE.value]
-    web_loader = WebLoaderClass(**web_loader_args)
+    if WebLoaderClass:
+        web_loader = WebLoaderClass(**web_loader_args)
 
-    log.debug(
-        "Using RAG_WEB_LOADER_ENGINE %s for %s URLs",
-        web_loader.__class__.__name__,
-        len(safe_urls),
-    )
+        log.debug(
+            "Using WEB_LOADER_ENGINE %s for %s URLs",
+            web_loader.__class__.__name__,
+            len(safe_urls),
+        )
 
-    return web_loader
+        return web_loader
+    else:
+        raise ValueError(
+            f"Invalid WEB_LOADER_ENGINE: {WEB_LOADER_ENGINE.value}. "
+            "Please set it to 'safe_web', 'playwright', 'firecrawl', or 'tavily'."
+        )
