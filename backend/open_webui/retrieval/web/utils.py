@@ -774,10 +774,10 @@ class SafeWebBaseLoader(WebBaseLoader):
                                           markdown_generator=md_generator
                                           )
             result = await crawler.arun(url=f"raw:{raw_html}", config=raw_config)
-            if result.markdown_v2.fit_markdown:
-                text = result.markdown_v2.fit_markdown
+            if result.markdown.fit_markdown:
+                text = result.markdown.fit_markdown
             else:
-                text = result.markdown_v2.raw_markdown
+                text = result.markdown.raw_markdown
 
             metadata = {"source": path}
             if title := soup.find("title"):
