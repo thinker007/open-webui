@@ -833,7 +833,7 @@ def get_web_loader(
         web_loader_args["api_key"] = FIRECRAWL_API_KEY.value
         web_loader_args["api_url"] = FIRECRAWL_API_BASE_URL.value
 
-    if RAG_WEB_LOADER_ENGINE.value == "curl_impersonate_server":
+    if WEB_LOADER_ENGINE.value == "curl_impersonate_server":
         web_loader_args["base_url"] = CURL_IMPERSONATE_SERVER_BASE_URL.value
 
     if WEB_LOADER_ENGINE.value == "tavily":
