@@ -32,7 +32,7 @@
 		'perplexity',
 		'sougou'
 	];
-	let webLoaderEngines = ['playwright', 'firecrawl', 'tavily'];
+	let webLoaderEngines = ['playwright', 'firecrawl', 'tavily','curl_impersonate_server'];
 
 	let webConfig = null;
 
