@@ -816,6 +816,26 @@
 								</div>
 							{/if}
 						</div>
+					{:else if webConfig.WEB_LOADER_ENGINE === 'curl_impersonate_server'}
+						<div class="mb-2.5 flex w-full flex-col">
+							<div>
+								<div class=" self-center text-xs font-medium mb-1">
+									{$i18n.t('External Curl Impersonate Server URL')}
+								</div>
+
+								<div class="flex w-full">
+									<div class="flex-1">
+										<input
+											class="w-full rounded-lg py-2 px-4 text-sm bg-gray-50 dark:text-gray-300 dark:bg-gray-850 outline-hidden"
+											type="text"
+											placeholder={$i18n.t('Enter External Curl Impersonate Server URL')}
+											bind:value={webConfig.CURL_IMPERSONATE_SERVER_BASE_URL}
+											autocomplete="off"
+										/>
+									</div>
+								</div>
+							</div>
+						</div>
 					{:else if webConfig.WEB_LOADER_ENGINE === 'external'}
 						<div class="mb-2.5 flex w-full flex-col">
 							<div>

@@ -1851,12 +1851,13 @@ async def process_web_search(
         ]
 
         search_results = await asyncio.gather(*search_tasks)
-
+        search_results_url = {}
         for result in search_results:
             if result:
                 for item in result:
                     if item and item.link:
                         urls.append(item.link)
+                        search_results_url[item.link] = item.title + "\r\n" + item.snippet
 
         urls = list(dict.fromkeys(urls))
         log.debug(f"urls: {urls}")
@@ -1896,6 +1897,22 @@ async def process_web_search(
                 trust_env=request.app.state.config.WEB_SEARCH_TRUST_ENV,
             )
             docs = await loader.aload()
+            for doc in docs:
+                url = doc.metadata.get("source")
+                if url in search_results_url:
+                    # 预先清理网页内容
+                    page_content = doc.page_content.strip()
+                    # 去除多余的空格但保留换行符
+                    import re
+                    # 将多个连续空格替换为单个空格，但保留换行符
+                    page_content_clean = re.sub(r'[ \t]+', ' ', page_content)
+                    # 去除行首行尾的空格
+                    page_content_clean = re.sub(r'^ +| +$', '', page_content_clean, flags=re.MULTILINE)
+                    # 将多个连续换行符替换为单个换行符
+                    page_content_clean = re.sub(r'\n\s*\n+', '\n', page_content_clean)
+                    search_content = search_results_url[url]
+                    doc.page_content = f"{page_content_clean}\n\n--- 搜索摘要 ---\n{search_content}"
+                    
 
         urls = [
             doc.metadata.get("source") for doc in docs if doc.metadata.get("source")

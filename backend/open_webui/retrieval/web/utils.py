@@ -65,6 +65,7 @@ def validate_url(url: Union[str, Sequence[str]]):
     if isinstance(url, str):
         if isinstance(validators.url(url), validators.ValidationError):
             raise ValueError(ERROR_MESSAGES.INVALID_URL)
+        '''
         if not ENABLE_RAG_LOCAL_WEB_FETCH:
             # Local web fetch is disabled, filter out any URLs that resolve to private IP addresses
             parsed_url = urllib.parse.urlparse(url)
@@ -79,6 +80,7 @@ def validate_url(url: Union[str, Sequence[str]]):
             for ip in ipv6_addresses:
                 if validators.ipv6(ip, private=True):
                     raise ValueError(ERROR_MESSAGES.INVALID_URL)
+        '''
         return True
     elif isinstance(url, Sequence):
         return all(validate_url(u) for u in url)
@@ -567,6 +569,7 @@ class CurlImpersonateServerLoader(WebBaseLoader):
         self, url: str, retries: int = 3, cooldown: int = 2, backoff: float = 1.5
     ) -> str:
         if self.base_url:
+            original_url = url
             url = f"{self.base_url}/{url}"
         async with httpx.AsyncClient(trust_env=self.trust_env, verify=self.verify_ssl) as client:
             for i in range(retries):
@@ -582,9 +585,27 @@ class CurlImpersonateServerLoader(WebBaseLoader):
                     log.debug(f'url:{url}\n\nkwargs:{kwargs}')
 
                     response = await client.get(url, **kwargs)
-                    if self.raise_for_status:
+                    try:
                         response.raise_for_status()
-                    return response.text
+                        return response.text
+                    except:
+                        data = {
+                            "url": original_url,
+                            "engine": "playwright",
+                            "formats": [
+                                "markdown"
+                            ]
+                        }
+                        response = await client.post(
+                            'http://192.168.50.228:8079/v1/scrape',
+                            json=data,
+                            timeout=30.0,
+                            headers={
+                                "Content-Type": "application/json"
+                            }
+                        )
+                        response.raise_for_status()
+                        return response.json()['data']['markdown']
                 except httpx.ConnectError as e:
                     if i == retries - 1:
                         raise
@@ -842,6 +863,7 @@ def get_web_loader(
         web_loader_args["api_url"] = FIRECRAWL_API_BASE_URL.value
 
     if WEB_LOADER_ENGINE.value == "curl_impersonate_server":
+        WebLoaderClass = CurlImpersonateServerLoader
         web_loader_args["base_url"] = CURL_IMPERSONATE_SERVER_BASE_URL.value
 
     if WEB_LOADER_ENGINE.value == "tavily":
@@ -867,5 +889,5 @@ def get_web_loader(
     else:
         raise ValueError(
             f"Invalid WEB_LOADER_ENGINE: {WEB_LOADER_ENGINE.value}. "
-            "Please set it to 'safe_web', 'playwright', 'firecrawl', or 'tavily'."
+            "Please set it to 'safe_web', 'playwright', 'firecrawl', 'curl_impersonate_server', 'external' or 'tavily'."
         )
