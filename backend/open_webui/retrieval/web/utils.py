@@ -65,7 +65,6 @@ def validate_url(url: Union[str, Sequence[str]]):
     if isinstance(url, str):
         if isinstance(validators.url(url), validators.ValidationError):
             raise ValueError(ERROR_MESSAGES.INVALID_URL)
-        '''
         if not ENABLE_RAG_LOCAL_WEB_FETCH:
             # Local web fetch is disabled, filter out any URLs that resolve to private IP addresses
             parsed_url = urllib.parse.urlparse(url)
@@ -80,7 +79,6 @@ def validate_url(url: Union[str, Sequence[str]]):
             for ip in ipv6_addresses:
                 if validators.ipv6(ip, private=True):
                     raise ValueError(ERROR_MESSAGES.INVALID_URL)
-        '''
         return True
     elif isinstance(url, Sequence):
         return all(validate_url(u) for u in url)
